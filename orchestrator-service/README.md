@@ -1,5 +1,5 @@
 ## 🧪 Как запустить
-1. Запустить RabbitMQ: `docker-compose up -d`
+1. Запустить RabbitMQ: `c`
 2. Установить зависимости: `pip install -r requirements.txt`
 3. Настроить `.env` (ниже приведён пример)
 4. Запустить оркестратор: `python orchestrator.py`

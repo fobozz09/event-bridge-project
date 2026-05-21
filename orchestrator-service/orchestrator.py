@@ -8,7 +8,7 @@ import time
 load_dotenv()
 
 # Настройки подключения
-HOST = os.getenv("RABBITMQ_HOST", "localhost")
+HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
 USER = os.getenv("RABBITMQ_USER", "guest")
 PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
@@ -52,26 +52,35 @@ def wait_for_rabbitmq(max_retries: int = 15, retry_delay: int = 3):
     for attempt in range(1, max_retries + 1):
         try:
             credentials = pika.PlainCredentials(USER, PASSWORD)
-            parameters = pika.ConnectionParameters(host=HOST, port=PORT, credentials=credentials)
+            parameters = pika.ConnectionParameters(
+                host=HOST, 
+                port=PORT, 
+                credentials=credentials,
+                # Добавляем таймауты для быстрого определения ошибки
+                connection_attempts=1,
+                socket_timeout=5
+            )
             connection = pika.BlockingConnection(parameters)
             connection.close()
-            print("✅ RabbitMQ доступен")
+            print(f"✅ RabbitMQ доступен на {HOST}:{PORT}")
             return
-        except pika.exceptions.AMQPConnectionError:
-            print(
-                "⏳ Ожидание RabbitMQ (попытка %d/%d)...", attempt, max_retries
-            )
+        except pika.exceptions.AMQPConnectionError as e:
+            print(f"⏳ Ожидание RabbitMQ (попытка {attempt}/{max_retries})...")
+            print(f"   Ошибка: {e}")
+            time.sleep(retry_delay)
+        except Exception as e:
+            print(f"⏳ Ошибка подключения (попытка {attempt}/{max_retries}): {e}")
             time.sleep(retry_delay)
 
-    print("❌ RabbitMQ не доступен после %d попыток", max_retries)
+    print(f"❌ RabbitMQ не доступен после {max_retries} попыток")
+    print(f"   Пробовали подключиться к {HOST}:{PORT}")
     sys.exit(1)
-
-
 
 def setup_infrastructure():
     """Подключается к RabbitMQ и создаёт всю инфраструктуру."""
+    print(f"🔧 Начинаем настройку инфраструктуры для RabbitMQ на {HOST}:{PORT}")
     wait_for_rabbitmq()
-    # 1. Подключение
+    
     credentials = pika.PlainCredentials(USER, PASSWORD)
     parameters = pika.ConnectionParameters(
         host=HOST,
@@ -82,7 +91,7 @@ def setup_infrastructure():
     try:
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
-        print("Подключено к RabbitMQ")
+        print("✅ Подключено к RabbitMQ")
         
         # 2. Создаём Exchange (обменник)
         channel.exchange_declare(
@@ -90,7 +99,7 @@ def setup_infrastructure():
             exchange_type=EXCHANGE_TYPE,
             durable=True
         )
-        print(f"Exchange '{EXCHANGE_NAME}' создан")
+        print(f"✅ Exchange '{EXCHANGE_NAME}' создан")
         
         # 3. Создаём очереди
         for queue_name in QUEUES:
@@ -99,7 +108,7 @@ def setup_infrastructure():
                 durable=True,
                 auto_delete=False
             )
-            print(f"Очередь '{queue_name}' создана")
+            print(f"✅ Очередь '{queue_name}' создана")
         
         # 4. Создаём связки (bindings)
         for routing_key, queue_list in BINDINGS.items():
@@ -109,18 +118,18 @@ def setup_infrastructure():
                     queue=queue_name,
                     routing_key=routing_key
                 )
-                print(f" Binding: '{routing_key}' → '{queue_name}'")
+                print(f"✅ Binding: '{routing_key}' → '{queue_name}'")
         
-        print("\n Инфраструктура готова! Можно запускать сервисы.")
+        print("\n🎉 Инфраструктура готова! Можно запускать сервисы.")
         
         return connection
         
-    except pika.exceptions.AMQPConnectionError:
-        print("Ошибка: Не удалось подключиться к RabbitMQ", file=sys.stderr)
-        print("Убедитесь, что RabbitMQ запущен (docker-compose up -d)", file=sys.stderr)
+    except pika.exceptions.AMQPConnectionError as e:
+        print(f"❌ Ошибка: Не удалось подключиться к RabbitMQ: {e}", file=sys.stderr)
+        print(f"   Проверьте что RabbitMQ запущен на {HOST}:{PORT}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
-        print(f"Ошибка при настройке: {e}", file=sys.stderr)
+        print(f"❌ Ошибка при настройке: {e}", file=sys.stderr)
         sys.exit(1)
 
 def keep_alive():
@@ -131,7 +140,6 @@ def keep_alive():
             time.sleep(60)
     except KeyboardInterrupt:
        print("🛑 Orchestrator остановлен")
-
 
 if __name__ == '__main__':
     setup_infrastructure()
