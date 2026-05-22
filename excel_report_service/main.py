@@ -9,13 +9,15 @@ from typing import List, Dict, Any
 import pika
 from openpyxl import Workbook, load_workbook
 
-REPORT_FILE = "events_report.xlsx"
-QUEUE_NAME = "excel_report_queue"
-RABBITMQ_HOST = "localhost"
-RABBITMQ_PORT = 5672
+REPORT_FILE = os.getenv("REPORT_FILE", "events_report.xlsx")
+QUEUE_NAME = os.getenv("QUEUE_NAME", "excel_report_queue")
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
 
-BUFFER_SIZE = 10
-BUFFER_FLUSH_INTERVAL = 30
+BUFFER_SIZE = int(os.getenv("BUFFER_SIZE", "10"))
+BUFFER_FLUSH_INTERVAL = int(os.getenv("BUFFER_FLUSH_INTERVAL", "30"))
 
 
 class ExcelReportService:
@@ -131,18 +133,39 @@ class ExcelReportService:
             self._write_buffer_to_excel()
             self._schedule_flush()
 
+    def _connect_with_retry(self, max_retries: int = 15, retry_delay: int = 3):
+        """Подключается к RabbitMQ с повторными попытками."""
+        credentials = pika.PlainCredentials(
+            os.getenv("RABBITMQ_USER", "guest"),
+            os.getenv("RABBITMQ_PASSWORD", "guest"),
+        )
+        for attempt in range(1, max_retries + 1):
+            try:
+                self.connection = pika.BlockingConnection(
+                    pika.ConnectionParameters(
+                        host=self.rabbitmq_host,
+                        port=self.rabbitmq_port,
+                        credentials=credentials,
+                        connection_attempts=1,
+                        socket_timeout=5,
+                    )
+                )
+                self.channel = self.connection.channel()
+                print(f"[INFO] Connected to RabbitMQ at {self.rabbitmq_host}:{self.rabbitmq_port}")
+                return
+            except pika.exceptions.AMQPConnectionError as exc:
+                print(f"[WARN] RabbitMQ not ready (attempt {attempt}/{max_retries}): {exc}")
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                else:
+                    raise
+
     def start(self) -> None:
         self._ensure_report_file()
         self._schedule_flush()
 
         try:
-            self.connection = pika.BlockingConnection(
-                pika.ConnectionParameters(
-                    host=self.rabbitmq_host,
-                    port=self.rabbitmq_port,
-                )
-            )
-            self.channel = self.connection.channel()
+            self._connect_with_retry()
             self.channel.queue_declare(queue=self.queue_name, durable=True)
             self.channel.basic_qos(prefetch_count=self.buffer_size)
             self.channel.basic_consume(
@@ -154,7 +177,7 @@ class ExcelReportService:
             print(f"[INFO] Buffer size: {self.buffer_size}, flush interval: {self.buffer_flush_interval}s")
             self.channel.start_consuming()
         except pika.exceptions.AMQPConnectionError as exc:
-            print(f"[ERROR] RabbitMQ connection failed: {exc}")
+            print(f"[ERROR] RabbitMQ connection failed after retries: {exc}")
             sys.exit(1)
         except KeyboardInterrupt:
             print("\n[INFO] Interrupted by user.")

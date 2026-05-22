@@ -21,8 +21,9 @@ python excel_report_service/main.py
 # Тестовый producer (15 сообщений с интервалом 0.5 сек):
 python excel_report_service/test_producer.py 15 0.5
 ```
-
-
+# docker compose up --build -d
+# docker logs eventbridge_excel_report
+# cd "C:\Users\Академия\MyDocuments\SavedGames\Новая папка (3)\event-bridge-project\excel_report_service"
 ## 📦 Зависимости
 ```bash
 pip install -r excel_report_service/requirements.txt
