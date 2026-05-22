@@ -1,61 +1,53 @@
 services:
   rabbitmq:
-    image: rabbitmq:3-management
-    container_name: eventbridge_rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+    image: rabbitmq:3.12-management
+    container_name: event_rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
-      - eventbridge-net
+      - event_network
 
-  orchestrator:
-    build:
-      context: ./orchestrator-service
-    container_name: eventbridge_orchestrator
+  api_gateway_service:
+    build: ./api_gateway_service
+    container_name: event_api_gateway
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+    ports:
+      - "8080:8080"
     depends_on:
-      rabbitmq:
-        condition: service_healthy
+      - rabbitmq
+    networks:
+      - event_network
+    restart: unless-stopped
+
+  critical_alert_service:
+    build: ./critical_alert_service
+    container_name: critical_alert_service
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: guest
       RABBITMQ_PASSWORD: guest
-    networks:
-      - eventbridge-net
-
-  api_gateway:
-    build:
-      context: ./api_gateway_service
-    container_name: eventbridge_api_gateway
-    ports:
-      - "8000:8000"
+      API_GATEWAY_HOST: api_gateway_service   # важно: имя сервиса, а не контейнера
+      API_GATEWAY_PORT: 8000
+      RUN_API_TESTS: "true"
     depends_on:
-      orchestrator:
-        condition: service_started
-    environment:
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USER: guest
-      RABBITMQ_PASSWORD: guest
+      - rabbitmq
+      - api_gateway_service
     networks:
-      - eventbridge-net
+      - event_network
+    restart: unless-stopped
 
-  redis:
-    image: redis:7-alpine
-    container_name: eventbridge_redis
-    ports:
-      - "6379:6379"
-    networks:
-      - eventbridge-net
+volumes:
+  rabbitmq_data:
 
 networks:
-  eventbridge-net:
+  event_network:
     driver: bridge
