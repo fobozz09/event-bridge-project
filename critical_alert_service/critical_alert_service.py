@@ -1,4 +1,4 @@
-# critical_alert_service.py (обновленная версия)
+# critical_alert_service.py
 import pika
 import json
 import os
@@ -6,16 +6,15 @@ import sys
 import threading
 from typing import Dict, Any
 
+
 # Конфигурация из переменных окружения с значениями по умолчанию
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
 RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', 5672))
 RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
 RABBITMQ_PASSWORD = os.getenv('RABBITMQ_PASSWORD', 'guest')
-QUEUE_NAME = 'critical_alert_queue'
-EXCHANGE_NAME = 'event_topic_exchange'
-ROUTING_KEY = 'event.registered.vip'
+QUEUE_NAME = os.getenv('QUEUE_NAME', 'critical_alert_queue')
 
-# Флаг для запуска тестов
+# Флаг для запуска тестов API Gateway
 RUN_API_TESTS = os.getenv('RUN_API_TESTS', 'true').lower() == 'true'
 
 
@@ -60,7 +59,7 @@ def callback(ch, method, properties, body):
             ch.basic_ack(delivery_tag=method.delivery_tag)
             print(f"[✓] Обработано VIP-событие: {event_data.get('user_email')}")
         else:
-            print(f"[!] Получено non-VIP событие в critical_alert_queue")
+            print(f"[!] Получено non-VIP событие в очереди {QUEUE_NAME}")
             ch.basic_ack(delivery_tag=method.delivery_tag)
             
     except json.JSONDecodeError as e:
@@ -71,32 +70,8 @@ def callback(ch, method, properties, body):
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 
-def setup_queue(channel):
-    channel.exchange_declare(
-        exchange=EXCHANGE_NAME,
-        exchange_type='topic',
-        durable=True
-    )
-    
-    channel.queue_declare(
-        queue=QUEUE_NAME,
-        durable=True,
-        exclusive=False,
-        auto_delete=False
-    )
-    
-    channel.queue_bind(
-        queue=QUEUE_NAME,
-        exchange=EXCHANGE_NAME,
-        routing_key=ROUTING_KEY
-    )
-    
-    print(f"[✓] Очередь '{QUEUE_NAME}' привязана к exchange '{EXCHANGE_NAME}'")
-    print(f"[✓] Слушаем VIP-события с routing key: {ROUTING_KEY}")
-
-
 def run_api_tests():
-    """Запускает тесты API Gateway в отдельном потоке"""
+    """Запускает интеграционные тесты API Gateway в отдельном потоке"""
     try:
         from test_api_gateway import send_test_requests_to_api_gateway
         print("\n🔧 Запуск интеграционных тестов API Gateway...")
@@ -116,13 +91,11 @@ def main():
     print("VIP Консьерж Сервис (Critical Alert Service)")
     print("=" * 50)
     print(f"RabbitMQ: {RABBITMQ_HOST}:{RABBITMQ_PORT}")
-    print(f"Queue: {QUEUE_NAME}")
-    print(f"Routing Key: {ROUTING_KEY}")
+    print(f"Ожидаемая очередь: {QUEUE_NAME}")
     print("-" * 50)
     
     # Запускаем тесты API Gateway, если включено
     if RUN_API_TESTS:
-        # Небольшая задержка перед запуском тестов
         import time
         time.sleep(2)
         api_test_thread = threading.Thread(target=run_api_tests, daemon=True)
@@ -136,13 +109,16 @@ def main():
         try:
             connection = get_rabbitmq_connection()
             channel = connection.channel()
-            setup_queue(channel)
+            
+            # НЕ создаём exchange и очередь — они уже созданы оркестратором
+            # Только подписываемся на существующую очередь
             channel.basic_qos(prefetch_count=1)
             channel.basic_consume(
                 queue=QUEUE_NAME,
                 on_message_callback=callback,
                 auto_ack=False
             )
+            print(f"[✓] Начат приём сообщений из очереди '{QUEUE_NAME}'")
             channel.start_consuming()
             
         except pika.exceptions.AMQPConnectionError as e:
