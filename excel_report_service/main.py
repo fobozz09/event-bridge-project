@@ -55,6 +55,7 @@ class ExcelReportService:
             "Email",
             "Event Type",
             "Timestamp",
+            "VIP",
             "Details",
         ])
         wb.save(self.report_file)
@@ -77,6 +78,7 @@ class ExcelReportService:
                     record.get("email", ""),
                     record.get("event_type", ""),
                     record.get("timestamp", datetime.now().isoformat()),
+                    "VIP" if record.get("is_vip") else "Regular",
                     record.get("details", ""),
                 ])
             wb.save(self.report_file)
@@ -114,14 +116,18 @@ class ExcelReportService:
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
+        # Преобразование полей
         record = {
-            "id": data.get("id", ""),
-            "username": data.get("username", ""),
-            "email": data.get("email", ""),
-            "event_type": data.get("event_type", ""),
-            "timestamp": data.get("timestamp", datetime.now().isoformat()),
-            "details": data.get("details", ""),
+            "id": data.get("registration_id") or data.get("id") or "",
+            "username": data.get("user_name") or data.get("username") or "",
+            "email": data.get("user_email") or data.get("email") or "",
+            "event_type": data.get("event_name") or data.get("event_type") or "",
+            "timestamp": data.get("registration_time") or data.get("timestamp") or datetime.now().isoformat(),
+            "is_vip": data.get("is_vip", False),
+            "details": str(data.get("body", {})) if data.get("body") else data.get("details", ""),
         }
+        
+        print(f"[DEBUG] Mapped record: {record}")
 
         with self.buffer_lock:
             self.buffer.append(record)
@@ -166,7 +172,7 @@ class ExcelReportService:
 
         try:
             self._connect_with_retry()
-            self.channel.queue_declare(queue=self.queue_name, durable=True)
+            self.channel.queue_declare(queue=self.queue_name, durable=True, passive=True)
             self.channel.basic_qos(prefetch_count=self.buffer_size)
             self.channel.basic_consume(
                 queue=self.queue_name, on_message_callback=self._on_message

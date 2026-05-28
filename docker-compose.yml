@@ -57,6 +57,28 @@ services:
     networks:
       - eventbridge-net
 
+  excel_report_service:
+    build:
+      context: ./excel_report_service
+    container_name: eventbridge_excel_report
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      REPORT_FILE: /reports/events_report.xlsx
+      BUFFER_SIZE: 10
+      BUFFER_FLUSH_INTERVAL: 30
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./excel_reports:/reports  
+    networks:
+      - eventbridge-net
+    restart: unless-stopped
+
 networks:
   eventbridge-net:
     driver: bridge

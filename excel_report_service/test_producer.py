@@ -10,7 +10,7 @@ RABBITMQ_HOST = "localhost"
 RABBITMQ_PORT = 5672
 QUEUE_NAME = "excel_report_queue"
 
-EVENT_TYPES = ["register", "login", "logout", "purchase", "update_profile"]
+EVENT_TYPES = ["register"]
 
 
 def send_message(channel, message: dict) -> None:
