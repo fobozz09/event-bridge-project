@@ -1,54 +1,85 @@
 services:
   rabbitmq:
-    image: rabbitmq:3.12-management
-    container_name: event_rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+    image: rabbitmq:3-management
+    container_name: eventbridge_rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
-      - event_network
+      - eventbridge-net
 
-  api_gateway_service:
-    build: ./api_gateway_service
-    container_name: event_api_gateway
+  orchestrator:
+    build:
+      context: ./orchestrator-service
+    container_name: eventbridge_orchestrator
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
-    ports:
-      - "8080:8000"
-    depends_on:
-      - rabbitmq
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
     networks:
-      - event_network
-    restart: unless-stopped
+      - eventbridge-net
 
+  api_gateway:
+    build:
+      context: ./api_gateway_service
+    container_name: eventbridge_api_gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      orchestrator:
+        condition: service_started
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+    networks:
+      - eventbridge-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: eventbridge_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - eventbridge-net
+
+  # 
   critical_alert_service:
-    build: ./critical_alert_service
-    container_name: critical_alert_service
+    build:
+      context: ./critical_alert_service
+    container_name: eventbridge_critical_alert
+    depends_on:
+      orchestrator:
+        condition: service_started
+      api_gateway:
+        condition: service_started
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: guest
       RABBITMQ_PASSWORD: guest
       QUEUE_NAME: critical_alert_queue
-      API_GATEWAY_HOST: api_gateway_service
+      API_GATEWAY_HOST: api_gateway
       API_GATEWAY_PORT: 8000
       RUN_API_TESTS: "true"
-    depends_on:
-      - rabbitmq
-      - api_gateway_service
     networks:
-      - event_network
+      - eventbridge-net
     restart: unless-stopped
-
-volumes:
-  rabbitmq_data:
+  # 
 
 networks:
-  event_network:
+  eventbridge-net:
     driver: bridge
