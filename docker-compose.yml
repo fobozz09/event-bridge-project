@@ -74,56 +74,34 @@ services:
     networks:
       - eventbridge-net
 
-  console_monitor:
+  # 
+  critical_alert_service:
     build:
-      context: ./console_monitor_service
-    container_name: eventbridge_console_monitor
+      context: ./critical_alert_service
+    container_name: eventbridge_critical_alert
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      redis:
+      orchestrator:
+        condition: service_started
+      api_gateway:
         condition: service_started
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      QUEUE_NAME: critical_alert_queue
+      API_GATEWAY_HOST: api_gateway
+      API_GATEWAY_PORT: 8000
+      RUN_API_TESTS: "true"
       RABBITMQ_PASS: guest
       REDIS_HOST: redis
       REDIS_PORT: 6379
       STATS_INTERVAL: "10"
       RECONNECT_DELAY: "5"
       MAX_RECONNECT_ATTEMPTS: "0"
+    restart: unless-stopped
     networks:
       - eventbridge-net
-
-  # DATABASE SERVICE
-  database_service:
-    build:
-      context: ./database_service
-    container_name: eventbridge_database_service
-    depends_on:
-      postgres:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    environment:
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: event_bridge
-
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USER: guest
-      RABBITMQ_PASS: guest
-
-      QUEUE_NAME: db_log_queue
-    networks:
-      - eventbridge-net
-
-volumes:
-  postgres_data:
 
 networks:
   eventbridge-net:
