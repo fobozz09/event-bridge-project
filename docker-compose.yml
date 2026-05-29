@@ -27,7 +27,7 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: guest
-      RABBITMQ_PASSWORD: guest
+      RABBITMQ_PASS: guest
     networks:
       - eventbridge-net
 
@@ -45,6 +45,24 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: guest
       RABBITMQ_PASSWORD: guest
+    networks:
+      - eventbridge-net
+
+  email_service:
+    build:
+      context: ./email-service
+    container_name: eventbridge_email_service
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      orchestrator:
+        condition: service_started
+    restart: on-failure
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASS: guest
     networks:
       - eventbridge-net
 
@@ -75,10 +93,15 @@ services:
       API_GATEWAY_HOST: api_gateway
       API_GATEWAY_PORT: 8000
       RUN_API_TESTS: "true"
+      RABBITMQ_PASS: guest
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      STATS_INTERVAL: "10"
+      RECONNECT_DELAY: "5"
+      MAX_RECONNECT_ATTEMPTS: "0"
+    restart: unless-stopped
     networks:
       - eventbridge-net
-    restart: unless-stopped
-  # 
 
 networks:
   eventbridge-net:
