@@ -74,29 +74,10 @@ services:
     networks:
       - eventbridge-net
 
-  postgres:
-    image: postgres:16
-    container_name: eventbridge_postgres
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: event_bridge
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - eventbridge-net
-  
-  analytics_service:
+  console_monitor:
     build:
-      context: ./analytics_service
-    container_name: eventbridge_analytics
+      context: ./console_monitor_service
+    container_name: eventbridge_console_monitor
     depends_on:
       rabbitmq:
         condition: service_healthy
